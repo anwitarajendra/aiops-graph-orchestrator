@@ -30,6 +30,7 @@ CONTAINER_NAMES = {
 
 # Tracks how many consecutive anomaly frames each service has
 anomaly_frames = {s: 0 for s in SERVICES}
+gnn_status = {s: "healthy" for s in SERVICES}
 
 # Tracks what actions were taken (for /status)
 recent_actions = []
@@ -62,15 +63,17 @@ def gnn_loop():
         gnn_predictions = gnn_brain.predict_anomalies(A, X, W0, W1, bias)
         for i, service in enumerate(SERVICES):
             if gnn_predictions[i] == 1:
+                gnn_status[service] = "anomaly"
                 anomaly_frames[service] += 1
                 print(f"[orchestrator] {service} anomaly frame {anomaly_frames[service]}")
                 if anomaly_frames[service] >= 3:
                     restart_container(service)
                     anomaly_frames[service] = 0
             else:
+                gnn_status[service] = "healthy"
                 anomaly_frames[service] = 0
-
-        time.sleep(2)
+    
+    time.sleep(2)
 
 @app.on_event("startup")
 def start_background_thread():
@@ -85,7 +88,7 @@ def status():
         mem = metrics[service]["mem"]
         anomalous = is_anomaly(service)
         nodes[service] = {
-            "status": "anomaly" if anomalous else "healthy",
+            "status": gnn_status[service],
             "cpu": cpu,
             "mem": mem,
         }

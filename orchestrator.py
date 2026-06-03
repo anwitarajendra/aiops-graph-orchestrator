@@ -7,6 +7,8 @@ import uvicorn
 
 from shared_state import metrics
 import graph_manager
+import gnn_brain
+
 
 app = FastAPI()
 
@@ -48,6 +50,8 @@ def restart_container(service):
         print(f"[orchestrator] Could not restart {service}: {e}")
 
 def gnn_loop():
+    X_train, Y_train = gnn_brain.generate_synthetic_data()
+    W0, W1, bias = gnn_brain.train_gnn(X_train, Y_train)
     while True:
         A = graph_manager.get_adjacency_matrix()
         X = graph_manager.get_feature_matrix()
@@ -55,8 +59,9 @@ def gnn_loop():
         print(f"[orchestrator] A=\n{A}")
         print(f"[orchestrator] X=\n{X}")
 
+        gnn_predictions = gnn_brain.predict_anomalies(A, X, W0, W1, bias)
         for i, service in enumerate(SERVICES):
-            if is_anomaly(service):
+            if gnn_predictions[i] == 1:
                 anomaly_frames[service] += 1
                 print(f"[orchestrator] {service} anomaly frame {anomaly_frames[service]}")
                 if anomaly_frames[service] >= 3:

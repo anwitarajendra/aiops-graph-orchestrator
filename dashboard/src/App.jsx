@@ -5,9 +5,7 @@ import Layout from './components/Layout';
 import TopologyPage from './pages/TopologyPage';
 import ServicesPage from './pages/ServicesPage';
 import MetricsPage from './pages/MetricsPage';
-import LogsPage from './pages/LogsPage';
-import SettingsPage from './pages/SettingsPage';
-            
+import LogsPage from './pages/LogsPage';            
 function App() {
   return (
     <Routes>
@@ -17,7 +15,6 @@ function App() {
         <Route path="services" element={<ServicesPage />} />
         <Route path="metrics" element={<MetricsPage />} />
         <Route path="logs" element={<LogsPage />} />
-        <Route path="settings" element={<SettingsPage />} />
       </Route>
     </Routes>
   );

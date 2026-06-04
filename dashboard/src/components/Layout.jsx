@@ -6,7 +6,6 @@ const NAV = [
   { to: '/services', label: 'Services', icon: <ServicesIcon /> },
   { to: '/metrics',  label: 'Metrics',  icon: <MetricsIcon /> },
   { to: '/logs',     label: 'Logs',     icon: <LogsIcon /> },
-  { to: '/settings', label: 'Settings', icon: <SettingsIcon /> },
 ]
 
 export default function Layout() {

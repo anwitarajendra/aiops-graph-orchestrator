@@ -1,3 +1,4 @@
+
 import { useEffect, useRef, useState, useCallback } from 'react'
 import CytoscapeComponent from 'react-cytoscapejs'
 import cytoscape from 'cytoscape'
@@ -5,23 +6,34 @@ import dagre from 'cytoscape-dagre'
 
 cytoscape.use(dagre)
 
-const INITIAL_NODES = [
-  { data: { id: 'frontend',  label: 'FRONTEND',  status: 'healthy', cpu: 12, mem: '480MB' } },
-  { data: { id: 'order',     label: 'ORDER-SVC', status: 'anomaly', cpu: 94, mem: '3.2GB' } },
-  { data: { id: 'inventory', label: 'INVENTORY', status: 'healthy', cpu: 8,  mem: '1.1GB' } },
-  { data: { id: 'db',        label: 'CORE-DB',   status: 'healthy', cpu: 22, mem: '2.0GB' } },
-  { data: { id: 'auth',      label: 'AUTH-SVC',  status: 'healthy', cpu: 15, mem: '320MB' } },
-]
-
-const INITIAL_EDGES = [
-  { data: { id: 'e1', source: 'frontend',  target: 'order',     status: 'anomaly' } },
+// ── Static edge topology (structure doesn't change, only node status does) ──
+const STATIC_EDGES = [
+  { data: { id: 'e1', source: 'frontend',  target: 'order',     status: 'healthy' } },
   { data: { id: 'e2', source: 'frontend',  target: 'auth',      status: 'healthy' } },
-  { data: { id: 'e3', source: 'order',     target: 'inventory', status: 'anomaly' } },
-  { data: { id: 'e4', source: 'order',     target: 'db',        status: 'anomaly' } },
+  { data: { id: 'e3', source: 'order',     target: 'inventory', status: 'healthy' } },
+  { data: { id: 'e4', source: 'order',     target: 'db',        status: 'healthy' } },
   { data: { id: 'e5', source: 'inventory', target: 'db',        status: 'healthy' } },
 ]
 
-// SVG icons per node id — rendered as background-image via data URI
+// Fallback node list so UI renders even before first fetch
+const FALLBACK_NODES = [
+  { data: { id: 'frontend',  label: 'FRONTEND',  status: 'healthy', cpu: 0,  mem: 0 } },
+  { data: { id: 'order',     label: 'ORDER-SVC', status: 'healthy', cpu: 0,  mem: 0 } },
+  { data: { id: 'inventory', label: 'INVENTORY', status: 'healthy', cpu: 0,  mem: 0 } },
+  { data: { id: 'db',        label: 'CORE-DB',   status: 'healthy', cpu: 0,  mem: 0 } },
+  { data: { id: 'auth',      label: 'AUTH-SVC',  status: 'healthy', cpu: 0,  mem: 0 } },
+]
+
+// Label map for service ids returned by backend
+const SERVICE_LABELS = {
+  frontend:  'FRONTEND',
+  order:     'ORDER-SVC',
+  inventory: 'INVENTORY',
+  db:        'CORE-DB',
+  auth:      'AUTH-SVC',
+}
+
+// SVG icons per node id
 const NODE_ICONS = {
   frontend:  `<svg xmlns='http://www.w3.org/2000/svg' width='32' height='32' viewBox='0 0 24 24' fill='none' stroke='%232563eb' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'><rect x='2' y='3' width='20' height='14' rx='2'/><line x1='8' y1='21' x2='16' y2='21'/><line x1='12' y1='17' x2='12' y2='21'/></svg>`,
   order:     `<svg xmlns='http://www.w3.org/2000/svg' width='32' height='32' viewBox='0 0 24 24' fill='none' stroke='%23dc2626' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'><circle cx='9' cy='21' r='1'/><circle cx='20' cy='21' r='1'/><path d='M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6'/></svg>`,
@@ -113,12 +125,6 @@ const buildStylesheet = () => [
   }
 ]
 
-// ── Status label component rendered under cytoscape via overlay ──
-function NodeStatusOverlay({ cy }) {
-  // Not needed — labels handled by cytoscape
-  return null
-}
-
 function MiniBar({ danger }) {
   const heights = [40, 55, 45, 70, 60, 100]
   return (
@@ -142,6 +148,11 @@ function NodeCard({ node }) {
   const anomaly = node.data.status === 'anomaly'
   const [hovered, setHovered] = useState(false)
 
+  // mem from backend is a float percentage (0–100)
+  const memDisplay = typeof node.data.mem === 'number'
+    ? `${node.data.mem.toFixed(1)}%`
+    : node.data.mem
+
   return (
     <div
       onMouseEnter={() => setHovered(true)}
@@ -163,7 +174,6 @@ function NodeCard({ node }) {
         overflow: 'hidden',
       }}
     >
-      {/* Top accent line */}
       <div style={{
         position: 'absolute', top: 0, left: 0, right: 0, height: 3,
         borderRadius: '14px 14px 0 0',
@@ -200,17 +210,16 @@ function NodeCard({ node }) {
         <div>
           <div style={{ display:'flex', alignItems:'baseline', gap:5 }}>
             <span style={{ fontSize:28, fontWeight:700, fontFamily:'var(--font-mono)', lineHeight:1, color: anomaly ? '#dc2626' : '#0f172a' }}>
-              {node.data.cpu}%
+              {typeof node.data.cpu === 'number' ? node.data.cpu.toFixed(1) : node.data.cpu}%
             </span>
             <span style={{ fontSize:10, color:'var(--text-muted)', fontFamily:'var(--font-mono)', fontWeight:600, marginBottom:2 }}>CPU</span>
           </div>
           <div style={{ display:'flex', alignItems:'baseline', gap:5, marginTop:4 }}>
             <span style={{ fontSize:18, fontWeight:700, fontFamily:'var(--font-mono)', lineHeight:1, color: anomaly ? '#dc2626' : '#334155' }}>
-              {node.data.mem}
+              {memDisplay}
             </span>
             <span style={{ fontSize:10, color:'var(--text-muted)', fontFamily:'var(--font-mono)', fontWeight:600 }}>MEM</span>
           </div>
-          {/* Status pill */}
           <div style={{
             marginTop:10, display:'inline-flex', alignItems:'center', gap:5,
             background: anomaly ? '#fef2f2' : '#f0fdf4',
@@ -235,48 +244,119 @@ function NodeCard({ node }) {
 }
 
 const LOGS_INIT = [
-  { time:'14:02:11', level:'INFO', msg:'Service frontend-v2 reported health check: 200 OK' },
-  { time:'14:05:45', level:'CRIT', msg:'Node order-svc-a1: Memory threshold exceeded (92%)' },
-  { time:'14:06:02', level:'ACTN', msg:'Triggering automated restart: order-svc-a1' },
-  { time:'14:06:15', level:'INFO', msg:'Kubernetes scheduler: Pod order-svc-a1-restart pending allocation' },
-  { time:'14:07:01', level:'INFO', msg:'Syncing inventory state with core-db-primary' },
-  { time:'14:07:33', level:'WARN', msg:'order-svc latency spike: p99 > 800ms' },
-  { time:'14:08:10', level:'INFO', msg:'auth-svc token refresh completed: 2048 sessions' },
-]
-const LOG_STREAM = [
-  { level:'INFO', msg:'Heartbeat: all nodes responding' },
-  { level:'WARN', msg:'order-svc CPU still elevated: 91%' },
-  { level:'INFO', msg:'Replica sync: inventory-db lag 12ms' },
-  { level:'ACTN', msg:'Auto-scaling trigger: order-svc replicas +1' },
+  { time:'--:--:--', level:'INFO', msg:'Waiting for backend connection at localhost:8000...' },
 ]
 const LEVEL_COLOR  = { CRIT:'#dc2626', WARN:'#d97706', ACTN:'#d97706', INFO:'#2563eb' }
 const LEVEL_BG     = { CRIT:'#fef2f2', WARN:'#fffbeb', ACTN:'#fffbeb', INFO:'#eff6ff' }
 
 export default function TopologyPage() {
-  const [nodes]    = useState(INITIAL_NODES)
-  const [logs, setLogs]       = useState(LOGS_INIT)
+  const [nodes, setNodes]       = useState(FALLBACK_NODES)
+  const [logs, setLogs]         = useState(LOGS_INIT)
   const [selected, setSelected] = useState(null)
+  const [connected, setConnected] = useState(false)
+  const [lastPollTs, setLastPollTs] = useState(null)
   const logsRef = useRef(null)
   const cyRef   = useRef(null)
+  // Keep a ref to last seen actions to avoid duplicate log entries
+  const seenActionsRef = useRef(new Set())
 
   const stylesheet = buildStylesheet()
+
+  // ── Derive edges: mark edge as anomaly if either endpoint is anomaly ──
+  const edges = STATIC_EDGES.map(edge => {
+    const srcNode = nodes.find(n => n.data.id === edge.data.source)
+    const tgtNode = nodes.find(n => n.data.id === edge.data.target)
+    const edgeStatus =
+      (srcNode?.data.status === 'anomaly' || tgtNode?.data.status === 'anomaly')
+        ? 'anomaly'
+        : 'healthy'
+    return { data: { ...edge.data, status: edgeStatus } }
+  })
+
   const elements = [
     ...nodes.map(n => ({ ...n })),
-    ...INITIAL_EDGES,
+    ...edges,
   ]
 
-  // Live log streaming
+  // ── Polling hook: hits /status every 2 seconds ──
   useEffect(() => {
-    let i = 0
-    const t = setInterval(() => {
-      const now = new Date()
-      const ts = [now.getHours(), now.getMinutes(), now.getSeconds()]
-        .map(v => String(v).padStart(2,'0')).join(':')
-      setLogs(prev => [...prev.slice(-25), { time: ts, ...LOG_STREAM[i++ % LOG_STREAM.length] }])
-    }, 3000)
-    return () => clearInterval(t)
+    const POLL_URL = 'http://localhost:8000/status'
+    const POLL_INTERVAL_MS = 2000
+
+    const poll = async () => {
+      try {
+        const res = await fetch(POLL_URL)
+        if (!res.ok) throw new Error(`HTTP ${res.status}`)
+        const data = await res.json()
+
+        setConnected(true)
+        setLastPollTs(data.timestamp)
+
+        // Map backend nodes → cytoscape node format
+        // Backend only returns frontend/order/inventory; db and auth stay at fallback
+        setNodes(prev => prev.map(node => {
+          const svc = data.nodes?.[node.data.id]
+          if (!svc) return node // backend doesn't track this node (db, auth) — keep as-is
+          return {
+            data: {
+              ...node.data,
+              status: svc.status,
+              cpu: svc.cpu,
+              mem: svc.mem,
+            }
+          }
+        }))
+
+        // Append any new backend actions as log entries
+        if (Array.isArray(data.actions)) {
+          const now = new Date()
+          const ts = [now.getHours(), now.getMinutes(), now.getSeconds()]
+            .map(v => String(v).padStart(2, '0')).join(':')
+
+          const newEntries = data.actions
+            .filter(action => !seenActionsRef.current.has(action))
+            .map(action => {
+              seenActionsRef.current.add(action)
+              return { time: ts, level: 'ACTN', msg: action }
+            })
+
+          if (newEntries.length > 0) {
+            setLogs(prev => [...prev.slice(-40), ...newEntries])
+          }
+        }
+
+        // Also add a periodic heartbeat log
+        setLogs(prev => {
+          const now = new Date()
+          const ts = [now.getHours(), now.getMinutes(), now.getSeconds()]
+            .map(v => String(v).padStart(2, '0')).join(':')
+          const entry = { time: ts, level: 'INFO', msg: 'Poll OK — metrics refreshed from orchestrator' }
+          // Only append if last entry wasn't also a poll-ok (avoid spam)
+          const last = prev[prev.length - 1]
+          if (last?.msg === entry.msg) return prev
+          return [...prev.slice(-40), entry]
+        })
+
+      } catch (err) {
+        setConnected(false)
+        const now = new Date()
+        const ts = [now.getHours(), now.getMinutes(), now.getSeconds()]
+          .map(v => String(v).padStart(2, '0')).join(':')
+        setLogs(prev => {
+          const last = prev[prev.length - 1]
+          const msg = `Backend unreachable: ${err.message}`
+          if (last?.msg === msg) return prev // dedupe consecutive errors
+          return [...prev.slice(-40), { time: ts, level: 'CRIT', msg }]
+        })
+      }
+    }
+
+    poll() // immediate first poll
+    const timer = setInterval(poll, POLL_INTERVAL_MS)
+    return () => clearInterval(timer)
   }, [])
 
+  // Auto-scroll logs
   useEffect(() => {
     if (logsRef.current) logsRef.current.scrollTop = logsRef.current.scrollHeight
   }, [logs])
@@ -318,6 +398,25 @@ export default function TopologyPage() {
             </div>
           ))}
         </div>
+
+        {/* Backend connection badge */}
+        <div style={{
+          background: connected ? '#f0fdf4' : '#fef2f2',
+          border: `1px solid ${connected ? '#bbf7d0' : '#fecaca'}`,
+          borderRadius: 99, padding:'6px 14px',
+          display:'flex', alignItems:'center', gap:7,
+        }}>
+          <div style={{
+            width:7, height:7, borderRadius:'50%',
+            background: connected ? '#16a34a' : '#dc2626',
+            animation: connected ? 'blink 1.8s ease infinite' : 'none',
+          }}/>
+          <span style={{ fontSize:11, fontFamily:'var(--font-mono)', fontWeight:700,
+            color: connected ? '#16a34a' : '#dc2626' }}>
+            {connected ? 'BACKEND LIVE' : 'BACKEND OFFLINE'}
+          </span>
+        </div>
+
         <div style={{ marginLeft:'auto', display:'flex', gap:8 }}>
           {['Refresh','Export'].map(label => (
             <button key={label} style={{
@@ -363,12 +462,16 @@ export default function TopologyPage() {
             </span>
           </div>
           <div style={{ marginLeft:'auto', display:'flex', alignItems:'center', gap:7,
-            background:'#f0fdf4', border:'1px solid #bbf7d0', borderRadius:99, padding:'5px 12px' }}>
+            background: connected ? '#f0fdf4' : '#fffbeb',
+            border: `1px solid ${connected ? '#bbf7d0' : '#fde68a'}`,
+            borderRadius:99, padding:'5px 12px' }}>
             <div style={{ position:'relative', width:7, height:7 }}>
-              <div style={{ position:'absolute', inset:0, borderRadius:'50%', background:'#16a34a', animation:'blink 1.8s ease infinite' }}/>
-              <div style={{ position:'absolute', inset:0, borderRadius:'50%', background:'#16a34a', animation:'pulse-ring 2s ease-out infinite' }}/>
+              <div style={{ position:'absolute', inset:0, borderRadius:'50%', background: connected ? '#16a34a' : '#d97706', animation:'blink 1.8s ease infinite' }}/>
+              <div style={{ position:'absolute', inset:0, borderRadius:'50%', background: connected ? '#16a34a' : '#d97706', animation:'pulse-ring 2s ease-out infinite' }}/>
             </div>
-            <span style={{ fontSize:11, fontFamily:'var(--font-mono)', color:'#16a34a', fontWeight:700, letterSpacing:'0.05em' }}>STREAMING LIVE</span>
+            <span style={{ fontSize:11, fontFamily:'var(--font-mono)', color: connected ? '#16a34a' : '#d97706', fontWeight:700, letterSpacing:'0.05em' }}>
+              {connected ? 'STREAMING LIVE' : 'RECONNECTING…'}
+            </span>
           </div>
         </div>
 
@@ -378,13 +481,11 @@ export default function TopologyPage() {
           background:'radial-gradient(ellipse at 35% 50%, #eef4ff 0%, #f5f7fb 55%, #f0f4f8 100%)',
           overflow:'hidden',
         }}>
-          {/* dot grid */}
           <div style={{
             position:'absolute', inset:0, zIndex:0,
             backgroundImage:'radial-gradient(circle, #c8d6e8 1.2px, transparent 1.2px)',
             backgroundSize:'26px 26px', opacity:0.5,
           }}/>
-          {/* scan line */}
           <div style={{
             position:'absolute', top:0, left:0, right:0, height:2, zIndex:2,
             background:'linear-gradient(90deg,transparent,rgba(37,99,235,0.10) 50%,transparent)',
@@ -400,7 +501,6 @@ export default function TopologyPage() {
             cy={handleCy}
           />
 
-          {/* Anomaly floating pill */}
           {anomalyNodes.length > 0 && (
             <div style={{
               position:'absolute', bottom:14, left:'50%', transform:'translateX(-50%)',
@@ -418,7 +518,6 @@ export default function TopologyPage() {
             </div>
           )}
 
-          {/* Node tooltip */}
           {selected && (
             <div style={{
               position:'absolute', top:14, right:14, zIndex:10,
@@ -427,7 +526,6 @@ export default function TopologyPage() {
               boxShadow:'0 8px 32px rgba(15,23,42,0.13), 0 2px 6px rgba(15,23,42,0.06)',
               minWidth:200, animation:'slide-in .15s ease',
             }}>
-              {/* tooltip header */}
               <div style={{
                 padding:'10px 14px', borderBottom:'1px solid #f1f5f9',
                 display:'flex', alignItems:'center', justifyContent:'space-between',
@@ -458,12 +556,11 @@ export default function TopologyPage() {
                   }}
                 >×</button>
               </div>
-              {/* tooltip body */}
               <div style={{ padding:'10px 14px 12px' }}>
                 {[
-                  ['Status',  selected.status],
-                  ['CPU',     selected.cpu + '%'],
-                  ['Memory',  selected.mem],
+                  ['Status', selected.status],
+                  ['CPU',    typeof selected.cpu === 'number' ? selected.cpu.toFixed(1) + '%' : selected.cpu + '%'],
+                  ['Memory', typeof selected.mem === 'number' ? selected.mem.toFixed(1) + '%' : selected.mem],
                 ].map(([k,v], idx, arr) => (
                   <div key={k} style={{
                     display:'flex', justifyContent:'space-between', alignItems:'center',
@@ -475,7 +572,7 @@ export default function TopologyPage() {
                       fontSize:12, fontFamily:'var(--font-mono)', fontWeight:700,
                       color: k==='Status'
                         ? (v==='anomaly' ? '#dc2626' : '#16a34a')
-                        : (v && parseInt(v) > 80 ? '#dc2626' : '#0f172a'),
+                        : (v && parseFloat(v) > 80 ? '#dc2626' : '#0f172a'),
                     }}>{v}</span>
                   </div>
                 ))}
@@ -483,7 +580,6 @@ export default function TopologyPage() {
             </div>
           )}
 
-          {/* Corner metadata */}
           {[
             { text:'CORE CLUSTER', style:{ top:10, left:14 } },
             { text:`${nodes.length} NODES`, style:{ top:10, right:14 } },
@@ -511,6 +607,11 @@ export default function TopologyPage() {
             <div style={{ width:7,height:7,borderRadius:'50%',background:'#dc2626',animation:'blink 1.2s ease infinite' }}/>
             <span style={{ fontSize:11, fontFamily:'var(--font-mono)', color:'#dc2626', fontWeight:700 }}>{anomalyNodes.length} Anomaly</span>
           </div>
+          {lastPollTs && (
+            <div style={{ fontSize:10, fontFamily:'var(--font-mono)', color:'#94a3b8' }}>
+              last sync {new Date(lastPollTs * 1000).toLocaleTimeString()}
+            </div>
+          )}
           <div style={{ flex:1 }}/>
           <div style={{ display:'flex', alignItems:'center', gap:14 }}>
             <div style={{ display:'flex', alignItems:'center', gap:6 }}>
@@ -551,9 +652,16 @@ export default function TopologyPage() {
             CLUSTER_ACTION_LOG
           </span>
           <div style={{ marginLeft:'auto', display:'flex', alignItems:'center', gap:7,
-            background:'#f0fdf4', border:'1px solid #bbf7d0', borderRadius:99, padding:'3px 10px' }}>
-            <div style={{ width:5,height:5,borderRadius:'50%',background:'#16a34a',animation:'blink 1.8s ease infinite' }}/>
-            <span style={{ fontSize:10, fontFamily:'var(--font-mono)', color:'#16a34a', fontWeight:700 }}>Streaming Live</span>
+            background: connected ? '#f0fdf4' : '#fef2f2',
+            border: `1px solid ${connected ? '#bbf7d0' : '#fecaca'}`,
+            borderRadius:99, padding:'3px 10px' }}>
+            <div style={{ width:5,height:5,borderRadius:'50%',
+              background: connected ? '#16a34a' : '#dc2626',
+              animation:'blink 1.8s ease infinite' }}/>
+            <span style={{ fontSize:10, fontFamily:'var(--font-mono)',
+              color: connected ? '#16a34a' : '#dc2626', fontWeight:700 }}>
+              {connected ? 'Streaming Live' : 'Offline'}
+            </span>
           </div>
         </div>
         <div ref={logsRef} style={{ maxHeight:190, overflowY:'auto', padding:'4px 0' }}>
